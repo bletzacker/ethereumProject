@@ -1,18 +1,13 @@
 // SPDX-License-Identifier: MIT
-
-pragma solidity ^0.6.0;
+pragma solidity 0.6.12;
 pragma experimental ABIEncoderV2;
 
-import "UberToken.sol";
-import "RideContract.sol";
+import "./UberToken.sol";
+import "./RideContract.sol";
 import {Customers} from "./CustomersLib.sol";
 import {Drivers} from "./DriversLib.sol";
 import {Rides} from "./RidesLib.sol";
 
-/// @title Uber Contract
-/// @author Laurent BLETZACKER
-/// @notice
-/// @dev 
 contract Uber {
     
     UberToken token;
@@ -31,8 +26,6 @@ contract Uber {
     event Updated(address indexed addr, string oldName, string newName);
     event unRegistered(address indexed addr, uint refund);
     
-    /// @notice constructor
-    /// @dev constructor
     constructor() public payable {
         token = new UberToken(address(this));
     }
@@ -48,7 +41,7 @@ contract Uber {
     }
     
     modifier onlyAvailableCustomer(address _addr) {
-        require(Customers.getByaddress(customers, _addr).status == Customers.Status.available , "You are in ride.");
+        require(Customers.getByAddress(customers, _addr).status == Customers.Status.available , "You are in ride.");
         _;
     }
     
@@ -63,79 +56,65 @@ contract Uber {
     }
     
     modifier onlyAvailableDriver(address _addr) {
-        require(Drivers.getByaddress(drivers, _addr).status == Drivers.Status.available , "You are in ride.");
+        require(Drivers.getByAddress(drivers, _addr).status == Drivers.Status.available , "You are in ride.");
         _;
     }
     
 // DEBUG
 
-    /// @notice balance
-    /// @dev balance
-    /// @param addr address
-    /// @return uint balance of the addr in UberToken
-    function balance(address addr) public view returns(uint) {
-        return token.balanceOf(addr);
+    function allowanceUBER(address owner,address spender) public view returns(uint) {
+        return token.allowance(owner, spender)/(10**15);
+    }
+
+    function balanceUBER(address addr) public view returns(uint) {
+        return token.balanceOf(addr)/(10**15);
     }
     
 // Create operation
 
-    /// @notice registerCustomer
-    /// @dev registerCustomer
-    /// @param _name Customer's Name
-    /// @return uint string
     function registerCustomer(string memory _name) public payable onlyUnregisteredCustomer() returns(string memory) {
         Customers.add(customers, customerAddresses, msg.sender, _name);
-        token.transfer(msg.sender, msg.value);
+        token.approveAndTransferUberToken(address(this), msg.sender, msg.value);
         emit Registered(msg.sender, _name, token.balanceOf(msg.sender));
         return "You are registered as Customer.";
     }
     
-    /// @notice registerDriver
-    /// @dev registerDriver
-    /// @param _name Driver's Name
-    /// @return uint string
     function registerDriver(string memory _name) public payable onlyUnregisteredDriver() returns(string memory) {
         Drivers.add(drivers, driverAddresses, msg.sender, _name);
-        token.transfer(msg.sender, msg.value);
+        token.approveAndTransferUberToken(address(this), msg.sender, msg.value);
         emit Registered(msg.sender, _name, token.balanceOf(msg.sender));
         return "You are registered as Driver.";
     }
 
 // Read operation
     
-    /// @notice readCustomer
-    /// @dev readCustomer
-    /// @return uint Customers.Customer
-    function readCustomer() public onlyRegisteredCustomer() returns(Customers.Customer memory) {
-        emit Getted(msg.sender);
-        return Customers.getByaddress(customers, msg.sender);
+    function readCustomer() public view returns(Customers.Customer memory) {
+        return Customers.getByAddress(customers, msg.sender);
+    }
+
+    function readCustomerName() public view returns(string memory) {
+        return readCustomer().name;
     }
     
-    /// @notice readDriver
-    /// @dev readDriver
-    /// @return uint Drivers.Driver
-    function readDriver() public onlyRegisteredDriver() returns(Drivers.Driver memory) {
-        emit Getted(msg.sender);
-        return Drivers.getByaddress(drivers, msg.sender);
+    function readDriver() public view returns(Drivers.Driver memory) {
+        return Drivers.getByAddress(drivers, msg.sender);
+    }
+
+    function readDriverName() public view returns(string memory) {
+        return readDriver().name;
     }
     
 // Update operation
 
-    /// @notice updateCustomer
-    /// @dev updateCustomer
-    /// @return string
     function updateCustomer(string memory newName) public onlyRegisteredCustomer() returns(string memory) {
-        string memory oldName = Customers.getByaddress(customers, msg.sender).name;
+        string memory oldName = Customers.getByAddress(customers, msg.sender).name;
         Customers.updateName(customers, msg.sender, newName);
         emit Updated(msg.sender, oldName, newName);
         return "Your name is updated";
     }
     
-    /// @notice updateDriver
-    /// @dev updateDriver
-    /// @return string
     function updateDriver(string memory newName) public onlyRegisteredDriver() returns(string memory) {
-        string memory oldName = Drivers.getByaddress(drivers, msg.sender).name;
+        string memory oldName = Drivers.getByAddress(drivers, msg.sender).name;
         Drivers.updateName(drivers, msg.sender, newName);
         emit Updated(msg.sender, oldName, newName);
         return "Your name is updated";
@@ -143,8 +122,6 @@ contract Uber {
     
 //  Delete operation
 
-    /// @notice unregiste
-    /// @dev unregiste
     function unregister() private {
         uint refund = token.balanceOf(msg.sender);
         if (refund > 0 ) {
@@ -154,33 +131,21 @@ contract Uber {
         emit unRegistered(msg.sender, refund);
     }
   
-    /// @notice unregisterCustomer
-    /// @dev unregisterCustomer
-    /// @return string
     function unregisterCustomer() public onlyRegisteredCustomer() returns(string memory) {
+        require(!Rides.contains(rides, msg.sender), "You have to cancel your ride before unregister");
         Customers.remove(customers, customerAddresses, msg.sender);
         unregister();
-        return "You are registered as Customer.";
+        return "You are unregistered as Customer.";
     }
     
-    /// @notice unregisterDriver
-    /// @dev unregisterDriver
-    /// @return string
     function unregisterDriver() public onlyRegisteredDriver() returns(string memory) {
         Drivers.remove(drivers, driverAddresses, msg.sender);
         unregister();
-        return "You are registered as Driver.";
+        return "You are unregistered as Driver.";
     }
    
 // Uber logic used by customer  
    
-    /// @notice sendRide
-    /// @dev sendRide
-    /// @param _pickup_lat Pickup latitude
-    /// @param _pickup_long Pickup longitude
-    /// @param _destination_lat Destination latitude
-    /// @param _destination_long Destination longitude
-    /// @return string
     function sendRide(  uint _pickup_lat, 
                         uint _pickup_long, 
                         uint _destination_lat, 
@@ -190,7 +155,7 @@ contract Uber {
         require(!Rides.contains(rides, msg.sender), "You have already requested a ride");
         
         Rides.add(rides, rideAddresses, msg.sender, _pickup_lat, _pickup_long, _destination_lat, _destination_long);
-        RideContract ride = Rides.getByaddress(rides, msg.sender).rideContract;
+        RideContract ride = Rides.getByAddress(rides, msg.sender).rideContract;
         address rideAddress = address(ride);
         Customers.updateRideAddress(customers, msg.sender, rideAddress);
         uint rideCost = ride.costCalculation();
@@ -200,13 +165,10 @@ contract Uber {
         return "Your ride is sent.";
     }
    
-    /// @notice cancelRide
-    /// @dev cancelRide
-    /// @return string
     function cancelRide() public onlyRegisteredCustomer() onlyAvailableCustomer(msg.sender) returns (string memory) {
         require(Rides.contains(rides, msg.sender), "You have not requested a ride");
         
-        RideContract ride = Rides.getByaddress(rides, msg.sender).rideContract;
+        RideContract ride = Rides.getByAddress(rides, msg.sender).rideContract;
         address rideAddress = address(ride);
         uint rideCost = ride.costCalculation();
         
@@ -217,39 +179,39 @@ contract Uber {
         
         return "Your ride is refund.";
     }
-
+    
+    function comfirmRide() public onlyRegisteredCustomer() returns (string memory) {
+        address rideAddress = Customers.getByAddress(customers, msg.sender).rideAddress;
+        Customers.updateStatus(customers, msg.sender, Customers.Status.available);
+        token.transferUberToken( rideAddress, 
+                                Customers.getByAddress(customers, msg.sender).driverAddress,
+                                token.balanceOf(rideAddress));
+        return "Your payment is authorized";
+    }
+    
 // Uber logic used by driver
 
-    /// @notice getRides
-    /// @dev getRides
-    /// @return address[]
-    function getRides() public view onlyRegisteredDriver() onlyAvailableDriver(msg.sender) returns (address[] memory) {
+    function getRides() public view returns (address[] memory) {
         return Rides.getAddresses(rideAddresses);
     }
    
-    /// @notice startRide
-    /// @dev startRide
-    /// @param customerAddress Choice one of Customers Address in asdress[] given par getRides
+    // Choice one of Customers Address in asdress[] given par getRides
     function startRide(address customerAddress) public onlyRegisteredDriver() onlyAvailableDriver(msg.sender) onlyAvailableCustomer(customerAddress) {
         
         Customers.updateStatus(customers, customerAddress, Customers.Status.unavailable);
+        Customers.updateDriverAddress(customers, customerAddress, msg.sender);
         Drivers.updateStatus(drivers, msg.sender, Drivers.Status.unavailable);
         
-        address rideAddress = Customers.getByaddress(customers, customerAddress).rideAddress;
+        address rideAddress = Customers.getByAddress(customers, customerAddress).rideAddress;
         Drivers.updateRideAddress(drivers, msg.sender, rideAddress);
         Rides.remove(rides, rideAddresses, customerAddress);
+        
+        token.approveUberToken(rideAddress, msg.sender, token.balanceOf(rideAddress));
     }
    
-    /// @notice endRide
-    /// @dev endRide
     function endRide() public onlyRegisteredDriver() {
-        require(Drivers.getByaddress(drivers, msg.sender).status == Drivers.Status.unavailable , "You are not in ride.");
+        require(Drivers.getByAddress(drivers, msg.sender).status == Drivers.Status.unavailable , "You are not in ride.");
         
-        address rideAddress = Drivers.getByaddress(drivers,msg.sender).rideAddress;
-        
-        Customers.updateStatus(customers, rideAddress,Customers.Status.available);
-        Drivers.updateStatus(drivers, msg.sender,Drivers.Status.available);
-        
-        token.approveAndTransferUberToken(rideAddress, msg.sender, token.balanceOf(rideAddress));
+        Drivers.updateStatus(drivers, msg.sender, Drivers.Status.available);
     }
 }
